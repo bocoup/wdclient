@@ -317,8 +317,10 @@ class Session(object):
         #body["capabilities"] = caps
         body = caps
 
-        value = self.send_command("POST", "session", body=body, requires_session=False)
+        response = self.transport.send("POST", "session", body=body)
+        Session.validate_response(response)
 
+        value = response.body["value"]
         self.session_id = value["sessionId"]
 
         if self.extension_cls:
@@ -330,7 +332,8 @@ class Session(object):
         if self.session_id is None:
             return
 
-        self.send_command("DELETE", "session/%s" % self.session_id, requires_session=False)
+        response = self.transport.send("DELETE", "session/" + self.session_id)
+        Session.validate_response(response)
 
         self.session_id = None
         self.timeouts = None
@@ -338,23 +341,15 @@ class Session(object):
         self.find = None
         self.extension = None
 
-    def send_raw_command(self, method, url, body=None, headers=None):
-        """
-        Send a raw unchecked and unaltered command to the remote end,
-        even when there is no active session.
+    @staticmethod
+    def validate_response(response):
+        value = response.body["value"]
 
-        :param method: HTTP method to use in request.
-        :param url: Full request URL.
-        :param body: Optional body of the HTTP request.
-        :param headers: Optional additional headers to include in the
-            HTTP request.
+        if response.status != 200:
+            cls = error.get(value.get("error"))
+            raise cls(value.get("message"))
 
-        :return: Instance of ``transport.Response`` describing the HTTP
-            response received from the remote end.
-        """
-        return self.transport.send(method, url, body, headers)
-
-    def send_command(self, method, uri, body=None, requires_session=True):
+    def send_command(self, method, uri, body=None):
         """
         Send a command to the remote end and validate its success.
 
@@ -362,8 +357,6 @@ class Session(object):
         :param uri: "Command part" of the HTTP request URL,
             e.g. `window/rect`.
         :param body: Optional body of the HTTP request.
-        :param requires_session: Optional flag defining whether a `session_id`
-            must be defined prior to invocation and injected into the URL.
 
         :return: `None` if the HTTP response body was empty, otherwise
             the result of parsing the body as JSON.
@@ -373,22 +366,15 @@ class Session(object):
         :raises error.WebDriverException: If the remote end returns
             an error.
         """
-        if requires_session:
-            if self.session_id is None:
-                raise error.SessionNotCreatedException()
+        if self.session_id is None:
+            raise error.SessionNotCreatedException()
 
-            url = urlparse.urljoin("session/%s/" % self.session_id, uri)
-        else:
-            url = uri
+        url = urlparse.urljoin("session/%s/" % self.session_id, uri)
 
-        response = self.send_raw_command(method, url, body)
-        value = response.body["value"]
+        response = self.transport.send(method, url, body)
+        Session.validate_response(response)
 
-        if response.status != 200:
-            cls = error.get(value.get("error"))
-            raise cls(value.get("message"))
-
-        return value
+        return response.body["value"]
 
     @property
     @command
