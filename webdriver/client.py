@@ -352,16 +352,8 @@ class Session(object):
 
         :return: Instance of ``transport.Response`` describing the HTTP
             response received from the remote end.
-
-        :raises error.WebDriverException: If the remote end returns
-            an error.
         """
-        response = self.transport.send(method, url, body, headers)
-        if response.status != 200:
-            value = response.body["value"]
-            cls = error.get(value.get("error"))
-            raise cls(value.get("message"))
-        return response
+        return self.transport.send(method, url, body, headers)
 
     def send_command(self, method, uri, body=None):
         """
@@ -385,12 +377,13 @@ class Session(object):
 
         url = urlparse.urljoin("session/%s/" % self.session_id, uri)
         response = self.send_raw_command(method, url, body)
+        value = response.body["value"]
 
-        rv = response.body["value"]
-        if not rv:
-            rv = None
+        if response.status != 200:
+            cls = error.get(value.get("error"))
+            raise cls(value.get("message"))
 
-        return rv
+        return value
 
     @property
     @command
